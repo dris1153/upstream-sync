@@ -208,6 +208,64 @@ node scripts/sync-state.js reset                         # Reset (next sync from
 
 All scripts support `--remote <name>` and `--branch <branch>` overrides.
 
+## Non-Fork Setup (Clone → Remove .git)
+
+If you cloned an open source repo, **removed `.git`**, and initialized a new git repo, the history is disconnected from upstream. The skill relies on shared git history to detect new commits (`HEAD..upstream/main`), so without it, **all upstream commits** will appear as "new".
+
+### Fix: Reconnect history with `git replace --graft`
+
+```bash
+# 1. Find your first commit (the "big bang" commit)
+git rev-list --max-parents=0 HEAD
+# → e.g. 4510b44
+
+# 2. Add upstream remote and fetch
+git remote add upstream https://github.com/original-author/original-repo.git
+git fetch upstream
+
+# 3. Find the upstream commit closest to when you cloned
+#    Option A: by date (if you remember when you cloned)
+git log upstream/main --oneline --before="2025-01-15" -1
+
+#    Option B: by comparing content (most accurate)
+#    Pick a few upstream commits and compare — least diff = best match
+git diff <upstream-commit> <your-first-commit> --stat | tail -1
+
+# 4. Graft: tell git your first commit's parent is the upstream commit
+git replace --graft <your-first-commit> <upstream-commit>
+
+# 5. Verify — should only show genuinely new upstream commits
+git log --oneline HEAD..upstream/main
+```
+
+### Fixing a wrong graft
+
+```bash
+# Remove and redo
+git replace -d <your-first-commit>
+git replace --graft <your-first-commit> <correct-upstream-commit>
+
+# Or overwrite directly
+git replace --graft -f <your-first-commit> <correct-upstream-commit>
+```
+
+After grafting, the skill works identically to a normal fork — `HEAD..upstream/main` only returns commits you haven't integrated yet.
+
+## Configuration
+
+Create a `.env` file in the `scripts/` directory or project root:
+
+```env
+# URL of the original repo (auto-creates remote if not configured)
+UPSTREAM_URL=https://github.com/original-author/original-repo.git
+
+# Remote name and branch (optional, defaults shown)
+UPSTREAM_REMOTE=upstream
+UPSTREAM_BRANCH=main
+```
+
+Priority order: `process.env` > `scripts/.env` > parent `.env` > grandparent `.env`
+
 ## Project Structure
 
 ```
