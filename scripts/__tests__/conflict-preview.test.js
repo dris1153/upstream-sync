@@ -144,5 +144,25 @@ describe("conflict-preview", () => {
       assert.strictEqual(result.strategy, "rebase");
       assert.ok(typeof result.localCommitsToReplay === "number");
     });
+
+    it("should support cherry-pick strategy for a specific commit", () => {
+      // Fetch upstream and get the latest commit hash
+      const { execSync } = require("child_process");
+      execSync("git fetch upstream", { cwd: repos.forkDir, stdio: "pipe" });
+      const upstreamHash = execSync('git log upstream/master -1 --format=%H', {
+        cwd: repos.forkDir, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+
+      const { run } = require("../conflict-preview");
+      const origLog = console.log;
+      console.log = () => {};
+      const result = run(["node", "script", "--strategy", "cherry-pick", "--commit", upstreamHash, "--format", "json", "--branch", "master"]);
+      console.log = origLog;
+
+      assert.strictEqual(result.strategy, "cherry-pick");
+      assert.strictEqual(result.targetCommit, upstreamHash);
+      assert.ok(result.summary);
+      assert.ok(["SAFE_TO_MERGE", "MERGE_WITH_MANUAL_RESOLUTION"].includes(result.summary.recommendation));
+    });
   });
 });
