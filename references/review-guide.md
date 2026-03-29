@@ -1,65 +1,105 @@
-# Upstream Commit Review Guide
+# Upstream Change Review Guide
 
-How to review upstream commits before integrating them.
+How to evaluate upstream changes and decide what to apply by editing files directly.
 
 ## Review Process
 
 ### Step 1: Get Overview
-Run `upstream-status.js --format json` to get structured commit list.
 
-Categorize commits by type:
-- **Bug fixes** - Usually safe to integrate, high priority
-- **New features** - Evaluate relevance to your fork
-- **Refactoring** - May conflict with local changes, review carefully
-- **Dependencies** - Check compatibility with your additions
-- **CI/Build** - May need adaptation for your build setup
-- **Docs** - Low risk, integrate freely
+Run `upstream-status.js --format json` to get the structured commit list.
+Run `upstream-diff.js --files-only` to see all changed files.
 
-### Step 2: Assess Each Commit
+Categorize upstream commits by type:
+- **Bug fixes** — high priority, usually safe to apply
+- **New features** — evaluate relevance to your fork
+- **Refactoring** — may affect files you customized, review carefully
+- **Dependencies** — check compatibility with your additions
+- **CI/Build** — may need adaptation for your build setup
+- **Docs** — low risk, apply freely
 
-For each commit, evaluate:
+### Step 2: Assess Each Changed File
+
+For each file in the upstream diff:
 
 | Question | If Yes | If No |
 |----------|--------|-------|
-| Fixes a bug you also have? | High priority integrate | Lower priority |
-| Touches files you customized? | Check conflict-preview | Safe to merge |
-| Changes APIs you depend on? | Review carefully | Safe to merge |
-| Adds features you want? | Integrate | Skip or defer |
-| Modifies build/config? | Test thoroughly | Auto-merge likely |
+| File exists locally? | Compare diffs carefully | Just create the file |
+| File was locally customized? | Careful merge needed | Apply upstream as-is |
+| Change fixes a bug you also have? | High priority apply | Lower priority |
+| Change modifies an API you depend on? | Adapt carefully | Apply as-is |
+| Change adds functionality you want? | Apply (possibly adapted) | Skip |
 
-### Step 3: Create Integration Plan
+### Step 3: Create Application Plan
 
-Group commits into:
-1. **Must integrate** - Bug fixes, security patches, breaking changes you need
-2. **Want to integrate** - Useful features, improvements
-3. **Skip/Defer** - Irrelevant features, conflicting approaches
+Group files into:
+1. **Apply as-is** — upstream-only files, or files with no local customizations
+2. **Apply with adaptation** — useful changes that need adjustment for local code
+3. **Partial apply** — only some hunks/sections are relevant
+4. **Skip** — irrelevant changes or intentional local divergence
+
+## How to Apply Changes
+
+### For simple changes (apply as-is)
+```
+1. Read the upstream diff for the file
+2. Edit the local file to incorporate the changes
+```
+
+### For adapted changes
+```
+1. Read the upstream diff to understand intent
+2. Read the local file to understand current state
+3. Write a modified version that combines both
+```
+
+### For partial changes
+```
+1. Read the upstream diff
+2. Identify which hunks/sections are useful
+3. Apply only those specific sections via Edit tool
+```
+
+### For new files
+```
+1. Get upstream file content from upstream-diff.js --format json
+2. Create the file locally
+3. Adapt imports, paths, or conventions to match local project
+```
 
 ## Reading Upstream Diffs
 
-To review specific commit details:
+To review specific details:
 ```bash
-git show <commit-hash>                  # Full diff
-git show <commit-hash> --stat           # Files changed only
-git show <commit-hash> -- <file-path>   # Specific file changes
-git log --oneline upstream/main -20     # Recent 20 commits
+# Per-file diff with context
+node upstream-diff.js --file <path> --context 10 --format json
+
+# Specific commit's changes
+node upstream-diff.js --commit <hash> --format json
+
+# Just the file list
+node upstream-diff.js --files-only
+
+# Full commit details
+git show <commit-hash>
+git log --oneline upstream/main -20
 ```
 
 ## Red Flags
 
 Watch for these in upstream changes:
-- **Breaking API changes** - Functions renamed, signatures changed
-- **Dependency version bumps** - May conflict with your pinned versions
-- **File restructuring** - Moved/renamed files break your patches
-- **Config format changes** - Build, CI, or env config modifications
-- **Removed features** - Features you depend on being deleted
+- **Breaking API changes** — functions renamed, signatures changed
+- **Dependency version bumps** — may conflict with your pinned versions
+- **File restructuring** — moved/renamed files break your patches
+- **Config format changes** — build, CI, or env config modifications
+- **Removed features** — features you depend on being deleted
 
 ## Decision Template
 
-For each commit group:
+For each file group:
 ```
-Commit(s): <hash(es)>
+File(s): <path(s)>
 Type: bug-fix | feature | refactor | deps | config
 Impact: low | medium | high
-Decision: integrate | skip | defer
+Action: apply-as-is | adapt | partial | skip
 Reason: <why>
 ```

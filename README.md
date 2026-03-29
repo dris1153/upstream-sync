@@ -1,78 +1,35 @@
 # Upstream Sync
 
-A Claude Code skill that syncs your fork/clone with the original open source repository. Automatically fetches, reviews, analyzes conflicts, and integrates new upstream commits smoothly.
+A Claude Code skill that syncs your fork/clone with the original open source repository. Instead of merging commits directly, Claude **reads upstream diffs, evaluates each change, and edits your files directly** — giving you full control over what gets applied and how.
 
 ## Problem
 
-When you fork/clone an open source project and build custom features on top, the original repo keeps receiving new commits from the community. Syncing those changes into your code is typically:
+When you fork/clone an open source project and build custom features on top, the original repo keeps receiving new commits. Syncing those changes is typically:
 
-- Time-consuming to review each new commit
-- Hard to detect conflicts before merging
-- Risky — can break your customized features
+- **Risky** — `git merge` can break your customized features
+- **Noisy** — merge commits pollute your history
+- **All-or-nothing** — hard to selectively apply only the changes you want
+- **Context-lost** — merge conflicts don't explain *why* code diverged
 
-This skill automates the entire process for Claude Code.
+## How This Skill Works
 
-## Features
+Instead of running `git merge`/`rebase`/`cherry-pick`, this skill takes a different approach:
 
-### 1. Upstream Status Check
-
-Script `upstream-status.js`:
-- Detects upstream remote (auto or specified)
-- Fetches latest commits from upstream
-- Lists new commits not yet synced
-- Shows changed files and diffstat
-- Reports ahead/behind commit counts
-
-### 2. Conflict Preview Before Merge
-
-Script `conflict-preview.js`:
-- Dry-run merge to detect potential conflicts
-- Categorizes files by risk level:
-  - **Conflicts** (HIGH) — both sides modified the same section, manual resolution needed
-  - **Safe Overlaps** (LOW) — both sides modified but different sections, git can auto-merge
-  - **Upstream-only** — only upstream changed, safe to merge
-  - **Local-only** — only local changed, not affected
-- Provides a recommendation: `SAFE_TO_MERGE`, `MERGE_WITH_MANUAL_RESOLUTION`, or `CONSIDER_CHERRY_PICK`
-
-### 3. Commit Review & Analysis
-
-Guides Claude Code to review each upstream commit:
-- Categorize by type (bug fix, feature, refactor, deps, config)
-- Assess impact on local code
-- Create integration plan: must integrate / want to integrate / skip
-
-### 4. Smart Integration
-
-Supports 3 integration strategies:
-
-| Strategy | When to Use |
-|----------|-------------|
-| **Merge** | Many local customizations, need to preserve full history |
-| **Rebase** | Few local changes, want clean linear history |
-| **Cherry-pick** | Only need specific upstream commits |
-
-### 5. Conflict Resolution Guidance
-
-When conflicts arise, the skill guides through:
-- Prioritizing conflicts (dependencies > utilities > features)
-- Resolution strategy for each conflict type
-- Post-resolution verification (test, build, verify)
+1. **Extract** — fetch upstream and extract per-file diffs since last sync
+2. **Evaluate** — Claude reads each diff, compares with your local code, and decides: apply as-is, adapt, partial apply, or skip
+3. **Edit** — Claude applies changes by directly editing your files (Edit/Write tools), preserving your customizations
+4. **Track** — saves the last synced commit so the next sync only shows new changes
+5. **Report** — presents a clear summary of what was updated, added, skipped, and why
 
 ## Installation
 
 ### Option 1: Copy into project
 
-Copy this folder into `.claude/skills/upstream-sync/` in your project:
-
 ```bash
-# Linux/macOS
-cp -r . /path/to/your-project/.claude/skills/upstream-sync/
-
-# Windows (PowerShell)
-Copy-Item -Recurse -Path . -Destination "C:\path\to\your-project\.claude\skills\upstream-sync"
+cp -r upstream-sync/ /path/to/your-project/.claude/skills/upstream-sync/
 ```
 
-### Option 2: Symlink
+### Option 2: Symlink (recommended for multi-project use)
 
 ```bash
 # Linux/macOS
@@ -82,208 +39,221 @@ ln -s /path/to/upstream-sync /path/to/your-project/.claude/skills/upstream-sync
 New-Item -ItemType Junction -Path "C:\path\to\your-project\.claude\skills\upstream-sync" -Target "C:\path\to\upstream-sync"
 ```
 
-## Usage
+## Setup
 
-### Step 1: Configure upstream URL
+### Configure upstream URL
 
-**Option A: Via `.env` (recommended)** — the skill will auto-create the remote for you:
+**Option A: Via `.env` (recommended)** — the skill auto-creates the remote:
 
-Create a `.env` file in the `scripts/` directory (or project root):
 ```env
+# Create in scripts/.env or project root .env
 UPSTREAM_URL=https://github.com/original-author/original-repo.git
 ```
 
 **Option B: Manual** — add the remote yourself:
+
 ```bash
 git remote add upstream https://github.com/original-author/original-repo.git
 ```
 
-If neither is configured, the skill will tell you what to do.
+### Optional `.env` settings
 
-### Step 2: Ask Claude Code to sync
+```env
+UPSTREAM_REMOTE=upstream   # Remote name (default: upstream)
+UPSTREAM_BRANCH=main       # Branch to sync from (default: main)
+```
 
-Trigger phrases:
+## Usage with Claude Code
+
+### Trigger phrases
 
 ```
 "Sync upstream changes"
-"Review new commits from upstream"
 "Check what's new in the original repo"
-"Integrate upstream into my branch"
-"Preview conflicts with upstream"
+"Review new commits from upstream"
+"Integrate upstream into my project"
 ```
 
-### Step 3: Claude Code will automatically
+### What Claude does
 
-1. Run `upstream-status.js` to fetch and list new commits
-2. Run `conflict-preview.js` to analyze conflicts
-3. Review each commit and assess impact
-4. Recommend the best integration strategy
-5. Perform merge/rebase/cherry-pick
-6. Guide through conflict resolution if needed
-7. Run tests/build to confirm stability
+```
+You: "Sync upstream changes"
 
-## Using Scripts Directly
+Claude:
+1. Runs upstream-status.js → "12 new upstream commits, 6 files changed"
+2. Runs upstream-diff.js  → extracts per-file diffs
+3. For each changed file:
+   - Reads the upstream diff to understand intent
+   - Reads your local version
+   - Decides: apply / adapt / skip
+   - Edits the file directly if applying
+4. Runs sync-state.js save → marks this sync point
+5. Runs tests/build to verify
+6. Presents a sync report:
 
-### upstream-status.js
+   ## Upstream Sync Report
+   **Source**: upstream/main (commits a1b2c3d...f4e5d6c)
+   **Upstream commits reviewed**: 12
+
+   ### Applied Changes
+   - **src/parser.js**: Applied upstream bug fix for memory leak
+   - **src/utils.js**: Updated helper to support new API format
+
+   ### New Files Added
+   - **src/dark-mode.js**: New dark mode feature from upstream
+
+   ### Skipped Changes
+   - **src/config.js**: Conflicts with our custom config — kept local version
+
+   ### Notes
+   - New dependency `@lib/theme` added in upstream — run `npm install`
+```
+
+### Real-world scenarios
+
+**Scenario: Only want bug fixes**
+
+```
+You: "Only sync bug fixes from upstream, skip new features"
+
+Claude:
+1. Lists upstream commits, filters by type (fix, bug, patch)
+2. Extracts diffs only for bug fix commits using --commit <hash>
+3. Applies each fix by editing the relevant files
+4. Skips all feature commits with reasons in the report
+```
+
+**Scenario: Large upstream update (50+ commits)**
+
+```
+You: "Sync upstream changes"
+
+Claude:
+1. Runs --files-only first to get overview
+2. Uses conflict-preview.js to identify risky overlaps
+3. Processes files in dependency order (utils → features)
+4. For heavily customized files: reads both versions carefully,
+   combines upstream improvements with local changes
+5. For new upstream files: creates them locally, adapts imports
+```
+
+**Scenario: Second sync (incremental)**
+
+```
+You: "Sync upstream again"
+
+Claude:
+1. Reads .upstream-sync.json → last synced at commit abc123
+2. Only shows changes AFTER abc123 (not everything since fork)
+3. "5 new commits since last sync, 3 files changed"
+4. Applies changes, saves new sync point
+```
+
+## Sync State Tracking
+
+The skill tracks which upstream commit was last synced in `.upstream-sync.json`:
+
+```json
+{
+  "lastSyncedCommit": "a1b2c3d4e5f6...",
+  "lastSyncDate": "2026-03-29T10:30:00.000Z",
+  "remote": "upstream",
+  "branch": "main"
+}
+```
+
+**This file is committed to git**, so the sync state persists across machines and clones. If you clone the project on a new machine, the next sync continues from the correct point.
+
+- **First sync**: uses `git merge-base` as starting point (all changes since fork)
+- **Subsequent syncs**: uses saved state (only new changes since last sync)
+- **Reset**: run `sync-state.js reset` to start over from merge-base
+
+## Scripts Reference
+
+### upstream-status.js — List new upstream commits
 
 ```bash
-# Check status (text output)
-node scripts/upstream-status.js
-
-# JSON output for programmatic use
-node scripts/upstream-status.js --format json
-
-# Specify remote and branch
+node scripts/upstream-status.js                          # Text output
+node scripts/upstream-status.js --format json            # JSON output
+node scripts/upstream-status.js --since 2024-06-01       # Filter by date
+node scripts/upstream-status.js --limit 20               # Limit commits
 node scripts/upstream-status.js --remote origin --branch develop
-
-# Only show commits since a specific date
-node scripts/upstream-status.js --since 2024-06-01
-
-# Limit number of commits
-node scripts/upstream-status.js --limit 20
 ```
 
-**Example output:**
-```
-=== Upstream Sync Status ===
-
-Current branch: my-feature
-Upstream remote: upstream (configured)
-Upstream branch: main
-
-Local is 5 commits ahead, 12 commits behind upstream.
-
-New upstream commits: 12
-Files changed: 8
-
---- Commits ---
-  a1b2c3d 2024-06-15 Alice: Fix memory leak in parser
-  d4e5f6g 2024-06-14 Bob: Add dark mode support
-  ...
-```
-
-### conflict-preview.js
+### upstream-diff.js — Extract per-file diffs
 
 ```bash
-# Preview merge conflicts
-node scripts/conflict-preview.js
-
-# Preview rebase conflicts
-node scripts/conflict-preview.js --strategy rebase
-
-# Preview cherry-pick conflicts for a specific commit
-node scripts/conflict-preview.js --strategy cherry-pick --commit abc123
-
-# JSON output
-node scripts/conflict-preview.js --format json
-
-# Specify remote/branch
-node scripts/conflict-preview.js --remote upstream --branch main
+node scripts/upstream-diff.js                            # All diffs since last sync
+node scripts/upstream-diff.js --files-only               # Just file list, no diffs
+node scripts/upstream-diff.js --file src/parser.js       # Specific file only
+node scripts/upstream-diff.js --commit abc123            # Specific commit only
+node scripts/upstream-diff.js --context 10 --format json # More context lines
 ```
 
-**Example output:**
-```
-=== Conflict Preview (merge) ===
+### conflict-preview.js — Detect overlapping changes
 
-Merge base: a1b2c3d4
-
---- Summary ---
-Potential conflicts:  2
-Safe overlaps:       3
-Upstream-only files: 15
-Local-only files:    8
-Recommendation:      MERGE_WITH_MANUAL_RESOLUTION
-
---- Conflicting Files (need manual resolution) ---
-  [HIGH] src/parser.js
-         Reason: merge-tree detected conflict
-  [HIGH] config/settings.json
-         Reason: merge-tree detected conflict
-
---- Safe Overlaps (both sides changed, likely auto-mergeable) ---
-  [LOW]  src/utils.js
-  [LOW]  src/index.js
-  [LOW]  package.json
+```bash
+node scripts/conflict-preview.js                         # Preview overlaps
+node scripts/conflict-preview.js --format json           # JSON output
 ```
 
-## Configuration
+### sync-state.js — Manage sync tracking
 
-Create a `.env` file in the `scripts/` directory or project root:
-
-```env
-# URL of the original repo (auto-creates remote if not configured)
-UPSTREAM_URL=https://github.com/original-author/original-repo.git
-
-# Remote name and branch (optional, defaults shown)
-UPSTREAM_REMOTE=upstream
-UPSTREAM_BRANCH=main
+```bash
+node scripts/sync-state.js show                          # View current state
+node scripts/sync-state.js save                          # Save current upstream HEAD
+node scripts/sync-state.js save --commit abc123          # Save specific commit
+node scripts/sync-state.js reset                         # Reset (next sync from merge-base)
 ```
 
-Priority order: `process.env` > `scripts/.env` > parent `.env` > grandparent `.env`
+All scripts support `--remote <name>` and `--branch <branch>` overrides.
 
 ## Project Structure
 
 ```
 upstream-sync/
-├── SKILL.md                   # Skill metadata + workflow for Claude Code
+├── SKILL.md                       # Skill metadata + workflow for Claude Code
 ├── README.md
+├── .upstream-sync.json            # Sync state tracking (committed to git)
 ├── scripts/
-│   ├── git-utils.js           # Shared git utilities
-│   ├── upstream-status.js     # Check upstream, list new commits
-│   ├── conflict-preview.js    # Preview conflicts before merge
+│   ├── git-utils.js               # Shared git utilities + sync state functions
+│   ├── upstream-status.js         # Check upstream, list new commits
+│   ├── upstream-diff.js           # Extract per-file diffs for review
+│   ├── conflict-preview.js        # Detect overlapping changes
+│   ├── sync-state.js              # Manage sync state (show/save/reset)
 │   ├── package.json
 │   ├── .env.example
-│   └── __tests__/             # 26 tests
+│   └── __tests__/                 # 52 tests (Node.js built-in test runner)
 │       ├── git-utils.test.js
 │       ├── upstream-status.test.js
-│       └── conflict-preview.test.js
+│       ├── upstream-diff.test.js
+│       ├── conflict-preview.test.js
+│       └── sync-state.test.js
 └── references/
-    ├── sync-workflow.md       # Full 5-phase sync workflow
-    ├── review-guide.md        # Upstream commit review guide
-    └── conflict-resolution.md # Conflict resolution strategies
+    ├── sync-workflow.md           # Full 7-phase sync workflow
+    ├── review-guide.md            # Change evaluation methodology
+    └── conflict-resolution.md     # Manual change application guide
 ```
 
 ## Running Tests
 
 ```bash
 cd scripts
-node --test __tests__/git-utils.test.js __tests__/upstream-status.test.js __tests__/conflict-preview.test.js
+npm test
 ```
 
-Requires Node.js >= 18 (uses built-in test runner, zero dependencies).
+Requires Node.js >= 18 (uses built-in test runner, zero npm dependencies).
 
-## Real-World Examples
+## Why Not Just `git merge`?
 
-### Scenario: Forked VSCode with custom features
-
-```
-You: "Sync my fork with latest VSCode upstream"
-
-Claude Code:
-1. Runs upstream-status.js → finds 47 new commits
-2. Runs conflict-preview.js → 3 conflicting files, 12 safe overlaps
-3. Reviews 47 commits:
-   - 5 bug fixes (must integrate)
-   - 20 new features (10 relevant, 10 skip)
-   - 12 refactoring (review carefully)
-   - 10 docs/CI (auto-merge)
-4. Suggests: merge bug fixes + docs first
-5. Cherry-picks the 10 relevant feature commits
-6. Resolves 3 conflicting files with specific guidance
-7. Runs test suite to confirm stability
-```
-
-### Scenario: Only want bug fixes from upstream
-
-```
-You: "Only integrate bug fixes from upstream, skip new features"
-
-Claude Code:
-1. Fetches upstream, lists new commits
-2. Filters commits with "fix", "bug", "patch" in message
-3. Cherry-picks each bug fix commit
-4. Tests after each cherry-pick
-```
+| | `git merge` | This skill |
+|---|---|---|
+| **Control** | All-or-nothing | Per-file, per-hunk decisions |
+| **History** | Merge commits, upstream history mixed in | Clean local commits only |
+| **Conflicts** | Cryptic conflict markers | Claude understands intent and combines intelligently |
+| **Customizations** | Can be overwritten silently | Explicitly preserved, upstream adapted to fit |
+| **Tracking** | Merge-base advances automatically | Explicit sync state, committed to git |
+| **Cross-machine** | N/A (git handles it) | Sync state persists via `.upstream-sync.json` |
 
 ## License
 

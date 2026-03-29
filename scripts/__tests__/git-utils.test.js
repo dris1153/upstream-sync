@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
-const { loadEnv, git, getRemotes, getCurrentBranch, hasUncommittedChanges, getDefaults } = require("../git-utils");
+const { loadEnv, git, getRemotes, getCurrentBranch, hasUncommittedChanges, getDefaults, loadSyncState, saveSyncState, getBaseCommit } = require("../git-utils");
 
 // Helper: create a temporary git repo for testing
 function createTempRepo() {
@@ -126,6 +126,41 @@ describe("git-utils", () => {
       // Restore
       if (origRemote) process.env.UPSTREAM_REMOTE = origRemote; else delete process.env.UPSTREAM_REMOTE;
       if (origBranch) process.env.UPSTREAM_BRANCH = origBranch; else delete process.env.UPSTREAM_BRANCH;
+    });
+  });
+
+  describe("syncState", () => {
+    it("should return null when no state file exists", () => {
+      const state = loadSyncState();
+      assert.strictEqual(state, null);
+    });
+
+    it("should save and load sync state", () => {
+      const hash = git(["rev-parse", "HEAD"]);
+      saveSyncState(hash, "upstream", "main");
+
+      const state = loadSyncState();
+      assert.ok(state);
+      assert.strictEqual(state.lastSyncedCommit, hash);
+      assert.strictEqual(state.remote, "upstream");
+      assert.strictEqual(state.branch, "main");
+      assert.ok(state.lastSyncDate);
+    });
+
+    it("getBaseCommit should fall back to merge-base when no state", () => {
+      // In a repo with no upstream remote, should return no commit
+      const base = getBaseCommit("nonexistent", "main");
+      assert.strictEqual(base.commit, null);
+      assert.strictEqual(base.source, "none");
+    });
+
+    it("getBaseCommit should use sync state when available", () => {
+      const hash = git(["rev-parse", "HEAD"]);
+      saveSyncState(hash, "upstream", "main");
+
+      const base = getBaseCommit("upstream", "main");
+      assert.strictEqual(base.commit, hash);
+      assert.strictEqual(base.source, "sync-state");
     });
   });
 
