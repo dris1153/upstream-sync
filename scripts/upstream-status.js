@@ -6,7 +6,7 @@
  *   node upstream-status.js [--remote <name>] [--branch <branch>] [--since <date>] [--limit <n>] [--format json|text]
  */
 
-const { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, getDefaults, validateArg, ensureRemote } = require("./git-utils");
+const { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, getDefaults, validateArg, ensureRemote, getBaseCommit } = require("./git-utils");
 
 function parseArgs(argv) {
   const args = { remote: null, branch: null, since: null, limit: 50, format: "text" };
@@ -42,18 +42,23 @@ function getAheadBehind(remote, branch) {
 
 function getNewCommits(remote, branch, since, limit) {
   const currentBranch = getCurrentBranch();
-  const range = `HEAD..${remote}/${branch}`;
+  const target = `${remote}/${branch}`;
 
-  if (!git(["rev-parse", `${remote}/${branch}`], { allowFail: true })) {
-    return { error: `Branch ${remote}/${branch} not found. Run: git fetch ${remote}` };
+  if (!git(["rev-parse", target], { allowFail: true })) {
+    return { error: `Branch ${target} not found. Run: git fetch ${remote}` };
   }
+
+  // Use sync state to determine baseline (last synced commit or merge-base)
+  const base = getBaseCommit(remote, branch);
+  const baseCommit = base.commit;
+  const range = baseCommit ? `${baseCommit}..${target}` : `HEAD..${target}`;
 
   const logArgs = ["log", range, "--pretty=format:%H|%h|%an|%ae|%aI|%s", "--no-merges"];
   if (since) logArgs.push(`--since=${since}`);
   if (limit) logArgs.push("-n", String(limit));
 
   const output = git(logArgs, { allowFail: true });
-  if (!output) return { commits: [], count: 0, range, currentBranch };
+  if (!output) return { commits: [], count: 0, range, currentBranch, baseSource: base.source };
 
   const commits = output.split("\n").filter(Boolean).map((line) => {
     const [hash, short, author, email, date, ...msgParts] = line.split("|");
@@ -68,6 +73,7 @@ function getNewCommits(remote, branch, since, limit) {
     count: commits.length,
     range,
     currentBranch,
+    baseSource: base.source,
     filesChanged: filesChanged ? filesChanged.split("\n").filter(Boolean) : [],
     diffstat: stat,
   };

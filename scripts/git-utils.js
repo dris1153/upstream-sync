@@ -104,4 +104,48 @@ function ensureRemote(remoteName) {
   return { exists: true, created: true, url };
 }
 
-module.exports = { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, hasUncommittedChanges, getDefaults, validateArg, ensureRemote };
+const SYNC_STATE_FILE = ".upstream-sync.json";
+
+function findSyncStateFile() {
+  // Search from cwd upward to find the git root, then look for state file there
+  const gitRoot = git(["rev-parse", "--show-toplevel"], { allowFail: true });
+  if (!gitRoot) return null;
+  return path.join(gitRoot, SYNC_STATE_FILE);
+}
+
+function loadSyncState() {
+  const stateFile = findSyncStateFile();
+  if (!stateFile || !fs.existsSync(stateFile)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(stateFile, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function saveSyncState(commitHash, remote, branch) {
+  const stateFile = findSyncStateFile();
+  if (!stateFile) throw new Error("Not in a git repository");
+  const state = { lastSyncedCommit: commitHash, lastSyncDate: new Date().toISOString(), remote, branch };
+  fs.writeFileSync(stateFile, JSON.stringify(state, null, 2) + "\n");
+  return stateFile;
+}
+
+function getBaseCommit(remote, branch) {
+  const state = loadSyncState();
+  const target = `${remote}/${branch}`;
+
+  // If we have a saved state, verify remote/branch match and commit still exists
+  if (state && state.lastSyncedCommit && state.remote === remote && state.branch === branch) {
+    const exists = git(["rev-parse", state.lastSyncedCommit], { allowFail: true });
+    if (exists) return { commit: state.lastSyncedCommit, source: "sync-state" };
+  }
+
+  // Fall back to merge-base
+  const mergeBase = git(["merge-base", "HEAD", target], { allowFail: true });
+  if (mergeBase) return { commit: mergeBase, source: "merge-base" };
+
+  return { commit: null, source: "none" };
+}
+
+module.exports = { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, hasUncommittedChanges, getDefaults, validateArg, ensureRemote, loadSyncState, saveSyncState, getBaseCommit, SYNC_STATE_FILE };
