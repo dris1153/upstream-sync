@@ -2,9 +2,18 @@
  * git-utils.js - Shared git utilities for upstream-sync scripts
  */
 
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+
+const SAFE_ARG_RE = /^[a-zA-Z0-9._\-\/~@^:{}]+$/;
+
+function validateArg(value, label) {
+  if (value && !SAFE_ARG_RE.test(value)) {
+    throw new Error(`Invalid ${label}: "${value}" contains disallowed characters`);
+  }
+  return value;
+}
 
 function loadEnv() {
   const envPaths = [
@@ -31,8 +40,9 @@ function loadEnv() {
 }
 
 function git(cmd, opts = {}) {
+  const args = typeof cmd === "string" ? cmd.split(/\s+/).filter(Boolean) : cmd;
   try {
-    return execSync(`git ${cmd}`, {
+    return execFileSync("git", args, {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
       ...opts,
@@ -40,12 +50,12 @@ function git(cmd, opts = {}) {
   } catch (e) {
     if (opts.allowFail) return null;
     if (opts.returnError) return { error: true, stderr: e.stderr || e.message, stdout: e.stdout || "" };
-    throw new Error(`git ${cmd} failed: ${e.stderr || e.message}`);
+    throw new Error(`git ${args.join(" ")} failed: ${e.stderr || e.message}`);
   }
 }
 
 function getRemotes() {
-  const output = git("remote -v");
+  const output = git(["remote", "-v"]);
   if (!output) return [];
   const remotes = {};
   for (const line of output.split("\n")) {
@@ -59,15 +69,17 @@ function getRemotes() {
 }
 
 function getCurrentBranch() {
-  return git("rev-parse --abbrev-ref HEAD");
+  return git(["rev-parse", "--abbrev-ref", "HEAD"]);
 }
 
 function fetchRemote(remote) {
-  git(`fetch ${remote}`, { allowFail: true });
+  validateArg(remote, "remote");
+  const result = git(["fetch", remote], { allowFail: true });
+  return result !== null;
 }
 
 function hasUncommittedChanges() {
-  const status = git("status --porcelain");
+  const status = git(["status", "--porcelain"]);
   return Boolean(status && status.length > 0);
 }
 
@@ -78,4 +90,4 @@ function getDefaults(args) {
   };
 }
 
-module.exports = { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, hasUncommittedChanges, getDefaults };
+module.exports = { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, hasUncommittedChanges, getDefaults, validateArg };

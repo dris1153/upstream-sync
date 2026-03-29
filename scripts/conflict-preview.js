@@ -6,7 +6,7 @@
  *   node conflict-preview.js [--remote <name>] [--branch <branch>] [--strategy merge|rebase|cherry-pick] [--commit <hash>] [--format json|text]
  */
 
-const { loadEnv, git, fetchRemote, hasUncommittedChanges, getDefaults } = require("./git-utils");
+const { loadEnv, git, fetchRemote, hasUncommittedChanges, getDefaults, validateArg } = require("./git-utils");
 
 function parseArgs(argv) {
   const args = { remote: null, branch: null, strategy: "merge", commit: null, format: "text" };
@@ -25,12 +25,15 @@ function parseArgs(argv) {
   const defaults = getDefaults(args);
   args.remote = defaults.remote;
   args.branch = defaults.branch;
+  validateArg(args.remote, "remote");
+  validateArg(args.branch, "branch");
+  if (args.commit) validateArg(args.commit, "commit");
   return args;
 }
 
 function analyzeOverlappingFiles(mergeBase, target) {
-  const localFiles = git(`diff --name-only ${mergeBase}...HEAD`, { allowFail: true }) || "";
-  const upstreamFiles = git(`diff --name-only ${mergeBase}...${target}`, { allowFail: true }) || "";
+  const localFiles = git(["diff", "--name-only", `${mergeBase}...HEAD`], { allowFail: true }) || "";
+  const upstreamFiles = git(["diff", "--name-only", `${mergeBase}...${target}`], { allowFail: true }) || "";
 
   const localSet = new Set(localFiles.split("\n").filter(Boolean));
   const upstreamSet = new Set(upstreamFiles.split("\n").filter(Boolean));
@@ -40,9 +43,9 @@ function analyzeOverlappingFiles(mergeBase, target) {
   const safeOverlaps = [];
 
   for (const file of bothModified) {
-    const mergeTree = git(`merge-tree ${mergeBase} HEAD ${target} -- ${file}`, { allowFail: true, returnError: true });
-    const localDiff = git(`diff --stat ${mergeBase}...HEAD -- ${file}`, { allowFail: true }) || "";
-    const upstreamDiff = git(`diff --stat ${mergeBase}...${target} -- ${file}`, { allowFail: true }) || "";
+    const mergeTree = git(["merge-tree", mergeBase, "HEAD", target, "--", file], { allowFail: true, returnError: true });
+    const localDiff = git(["diff", "--stat", `${mergeBase}...HEAD`, "--", file], { allowFail: true }) || "";
+    const upstreamDiff = git(["diff", "--stat", `${mergeBase}...${target}`, "--", file], { allowFail: true }) || "";
 
     const fileInfo = { file, localChanges: localDiff, upstreamChanges: upstreamDiff };
 
@@ -62,11 +65,11 @@ function analyzeOverlappingFiles(mergeBase, target) {
 function previewMergeConflicts(remote, branch) {
   const target = `${remote}/${branch}`;
 
-  if (!git(`rev-parse ${target}`, { allowFail: true })) {
+  if (!git(["rev-parse", target], { allowFail: true })) {
     return { error: `${target} not found. Run: git fetch ${remote}` };
   }
 
-  const mergeBase = git(`merge-base HEAD ${target}`, { allowFail: true });
+  const mergeBase = git(["merge-base", "HEAD", target], { allowFail: true });
   if (!mergeBase) {
     return { error: "No common ancestor found between current branch and upstream" };
   }
@@ -88,13 +91,59 @@ function previewMergeConflicts(remote, branch) {
   };
 }
 
+function previewCherryPickConflicts(remote, branch, commitHash) {
+  const target = `${remote}/${branch}`;
+
+  if (!git(["rev-parse", target], { allowFail: true })) {
+    return { error: `${target} not found. Run: git fetch ${remote}` };
+  }
+
+  // Verify the commit exists
+  if (!git(["rev-parse", commitHash], { allowFail: true })) {
+    return { error: `Commit ${commitHash} not found. Run: git fetch ${remote}` };
+  }
+
+  // Get files changed by the specific commit
+  const commitFiles = git(["diff-tree", "--no-commit-id", "--name-only", "-r", commitHash], { allowFail: true }) || "";
+  const commitFileSet = new Set(commitFiles.split("\n").filter(Boolean));
+
+  // Get locally modified files
+  const mergeBase = git(["merge-base", "HEAD", target], { allowFail: true });
+  if (!mergeBase) {
+    return { error: "No common ancestor found between current branch and upstream" };
+  }
+
+  const localFiles = git(["diff", "--name-only", `${mergeBase}...HEAD`], { allowFail: true }) || "";
+  const localSet = new Set(localFiles.split("\n").filter(Boolean));
+
+  const overlapping = [...commitFileSet].filter((f) => localSet.has(f));
+  const safeFiles = [...commitFileSet].filter((f) => !localSet.has(f));
+
+  return {
+    strategy: "cherry-pick",
+    targetCommit: commitHash,
+    mergeBase: mergeBase.slice(0, 8),
+    conflicts: overlapping.map((f) => ({ file: f, severity: "medium", reason: "commit touches locally modified file" })),
+    safeOverlaps: [],
+    upstreamOnly: safeFiles,
+    localOnly: [],
+    summary: {
+      totalConflicts: overlapping.length,
+      totalOverlaps: 0,
+      upstreamOnlyFiles: safeFiles.length,
+      localOnlyFiles: 0,
+      recommendation: overlapping.length === 0 ? "SAFE_TO_MERGE" : "MERGE_WITH_MANUAL_RESOLUTION",
+    },
+  };
+}
+
 function previewRebaseConflicts(remote, branch) {
   const mergeResult = previewMergeConflicts(remote, branch);
   if (mergeResult.error) return mergeResult;
 
   const target = `${remote}/${branch}`;
-  const mergeBase = git(`merge-base HEAD ${target}`, { allowFail: true });
-  const localCommits = git(`log --oneline ${mergeBase}..HEAD`, { allowFail: true }) || "";
+  const mergeBase = mergeResult.mergeBase;
+  const localCommits = git(["log", "--oneline", `${mergeBase}..HEAD`], { allowFail: true }) || "";
   const commitCount = localCommits ? localCommits.split("\n").filter(Boolean).length : 0;
 
   return {
@@ -113,6 +162,7 @@ function printText(r, strategy) {
   if (r.error) { console.log(`[!] ${r.error}`); return; }
 
   console.log(`Merge base: ${r.mergeBase}`);
+  if (r.targetCommit) console.log(`Target commit: ${r.targetCommit}`);
   if (r.localCommitsToReplay) console.log(`Local commits to replay: ${r.localCommitsToReplay}`);
 
   const s = r.summary;
@@ -126,7 +176,7 @@ function printText(r, strategy) {
   if (r.conflicts.length > 0) {
     console.log(`\n--- Conflicting Files (need manual resolution) ---`);
     for (const c of r.conflicts) {
-      console.log(`  [HIGH] ${c.file}`);
+      console.log(`  [${c.severity.toUpperCase()}] ${c.file}`);
       console.log(`         Reason: ${c.reason}`);
     }
   }
@@ -159,7 +209,10 @@ function run(argv) {
     }
   }
 
-  fetchRemote(args.remote);
+  const fetched = fetchRemote(args.remote);
+  if (!fetched && args.format === "text") {
+    console.log("[!] Failed to fetch upstream. Results may be stale.\n");
+  }
 
   let result;
   switch (args.strategy) {
@@ -170,9 +223,7 @@ function run(argv) {
       if (!args.commit) {
         result = { error: "Cherry-pick strategy requires --commit <hash>" };
       } else {
-        result = previewMergeConflicts(args.remote, args.branch);
-        result.strategy = "cherry-pick";
-        result.targetCommit = args.commit;
+        result = previewCherryPickConflicts(args.remote, args.branch, args.commit);
       }
       break;
     default:
@@ -188,7 +239,7 @@ function run(argv) {
   return result;
 }
 
-module.exports = { parseArgs, previewMergeConflicts, previewRebaseConflicts, analyzeOverlappingFiles, run };
+module.exports = { parseArgs, previewMergeConflicts, previewRebaseConflicts, previewCherryPickConflicts, analyzeOverlappingFiles, run };
 
 if (require.main === module) {
   try { run(); } catch (e) { console.error(`Error: ${e.message}`); process.exit(1); }

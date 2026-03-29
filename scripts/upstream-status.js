@@ -6,7 +6,7 @@
  *   node upstream-status.js [--remote <name>] [--branch <branch>] [--since <date>] [--limit <n>] [--format json|text]
  */
 
-const { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, getDefaults } = require("./git-utils");
+const { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, getDefaults, validateArg } = require("./git-utils");
 
 function parseArgs(argv) {
   const args = { remote: null, branch: null, since: null, limit: 50, format: "text" };
@@ -22,15 +22,18 @@ function parseArgs(argv) {
         process.exit(0);
     }
   }
+  if (isNaN(args.limit) || args.limit < 1) args.limit = 50;
   const defaults = getDefaults(args);
   args.remote = defaults.remote;
   args.branch = defaults.branch;
+  validateArg(args.remote, "remote");
+  validateArg(args.branch, "branch");
   return args;
 }
 
 function getAheadBehind(remote, branch) {
   const local = getCurrentBranch();
-  const result = git(`rev-list --left-right --count ${local}...${remote}/${branch}`, { allowFail: true });
+  const result = git(["rev-list", "--left-right", "--count", `${local}...${remote}/${branch}`], { allowFail: true });
   if (!result) return null;
   const [ahead, behind] = result.split("\t").map(Number);
   return { ahead, behind };
@@ -40,15 +43,15 @@ function getNewCommits(remote, branch, since, limit) {
   const currentBranch = getCurrentBranch();
   const range = `HEAD..${remote}/${branch}`;
 
-  if (!git(`rev-parse ${remote}/${branch}`, { allowFail: true })) {
+  if (!git(["rev-parse", `${remote}/${branch}`], { allowFail: true })) {
     return { error: `Branch ${remote}/${branch} not found. Run: git fetch ${remote}` };
   }
 
-  let logCmd = `log ${range} --pretty=format:"%H|%h|%an|%ae|%aI|%s" --no-merges`;
-  if (since) logCmd += ` --since="${since}"`;
-  if (limit) logCmd += ` -n ${limit}`;
+  const logArgs = ["log", range, "--pretty=format:%H|%h|%an|%ae|%aI|%s", "--no-merges"];
+  if (since) logArgs.push(`--since=${since}`);
+  if (limit) logArgs.push("-n", String(limit));
 
-  const output = git(logCmd, { allowFail: true });
+  const output = git(logArgs, { allowFail: true });
   if (!output) return { commits: [], count: 0, range, currentBranch };
 
   const commits = output.split("\n").filter(Boolean).map((line) => {
@@ -56,8 +59,8 @@ function getNewCommits(remote, branch, since, limit) {
     return { hash, short, author, email, date, message: msgParts.join("|") };
   });
 
-  const stat = git(`diff --stat ${range}`, { allowFail: true }) || "";
-  const filesChanged = git(`diff --name-only ${range}`, { allowFail: true }) || "";
+  const filesChanged = git(["diff", "--name-only", range], { allowFail: true }) || "";
+  const stat = git(["diff", "--stat", range], { allowFail: true }) || "";
 
   return {
     commits,
@@ -124,7 +127,8 @@ function run(argv) {
     result.suggestion = `Add upstream: git remote add ${args.remote} <upstream-url>`;
     result.availableRemotes = remotes;
   } else {
-    fetchRemote(args.remote);
+    const fetched = fetchRemote(args.remote);
+    if (!fetched) result.fetchWarning = "Failed to fetch upstream. Results may be stale.";
     const counts = getAheadBehind(args.remote, args.branch);
     if (counts) result.aheadBehind = counts;
     Object.assign(result, getNewCommits(args.remote, args.branch, args.since, args.limit));
@@ -133,6 +137,7 @@ function run(argv) {
   if (args.format === "json") {
     console.log(JSON.stringify(result, null, 2));
   } else {
+    if (result.fetchWarning) console.log(`[!] ${result.fetchWarning}\n`);
     printText(result);
   }
   return result;
