@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "Scripts for upstream-sync skill",
   "scripts": {
-    "test": "node --test __tests__/upstream-status.test.js __tests__/conflict-preview.test.js"
+    "test": "node --test __tests__/git-utils.test.js __tests__/upstream-status.test.js __tests__/conflict-preview.test.js"
   }
 }

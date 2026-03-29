@@ -56,7 +56,7 @@ GoogleService-Info.plist
 
 repomix-output.xml
 .serena/cache
-plans/**/*
+plans/templates
 !plans/templates/*
 screenshots/*
 docs/screenshots/*

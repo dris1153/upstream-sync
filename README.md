@@ -65,13 +65,21 @@ When conflicts arise, the skill guides through:
 Copy this folder into `.claude/skills/upstream-sync/` in your project:
 
 ```bash
+# Linux/macOS
 cp -r . /path/to/your-project/.claude/skills/upstream-sync/
+
+# Windows (PowerShell)
+Copy-Item -Recurse -Path . -Destination "C:\path\to\your-project\.claude\skills\upstream-sync"
 ```
 
 ### Option 2: Symlink
 
 ```bash
+# Linux/macOS
 ln -s /path/to/upstream-sync /path/to/your-project/.claude/skills/upstream-sync
+
+# Windows (PowerShell, run as admin)
+New-Item -ItemType Junction -Path "C:\path\to\your-project\.claude\skills\upstream-sync" -Target "C:\path\to\upstream-sync"
 ```
 
 ## Usage
