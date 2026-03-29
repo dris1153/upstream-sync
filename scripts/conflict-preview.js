@@ -6,7 +6,7 @@
  *   node conflict-preview.js [--remote <name>] [--branch <branch>] [--strategy merge|rebase|cherry-pick] [--commit <hash>] [--format json|text]
  */
 
-const { loadEnv, git, fetchRemote, hasUncommittedChanges, getDefaults, validateArg } = require("./git-utils");
+const { loadEnv, git, fetchRemote, hasUncommittedChanges, getDefaults, validateArg, ensureRemote } = require("./git-utils");
 
 function parseArgs(argv) {
   const args = { remote: null, branch: null, strategy: "merge", commit: null, format: "text" };
@@ -207,6 +207,14 @@ function run(argv) {
     } else {
       console.log(`[!] ${warning}\n`);
     }
+  }
+
+  const remote = ensureRemote(args.remote);
+  if (!remote.exists) {
+    const errResult = { error: remote.error, suggestion: `Set UPSTREAM_URL in .env or run: git remote add ${args.remote} <url>` };
+    if (args.format === "json") { console.log(JSON.stringify(errResult, null, 2)); }
+    else { console.log(`[!] ${remote.error}\n    ${errResult.suggestion}`); }
+    return errResult;
   }
 
   const fetched = fetchRemote(args.remote);
