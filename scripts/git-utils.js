@@ -90,4 +90,18 @@ function getDefaults(args) {
   };
 }
 
-module.exports = { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, hasUncommittedChanges, getDefaults, validateArg };
+function ensureRemote(remoteName) {
+  validateArg(remoteName, "remote");
+  const remotes = getRemotes();
+  if (remotes.some((r) => r.name === remoteName)) return { exists: true };
+
+  const url = process.env.UPSTREAM_URL;
+  if (!url) return { exists: false, error: `Remote '${remoteName}' not found and UPSTREAM_URL not configured` };
+
+  const result = git(["remote", "add", remoteName, url], { allowFail: true });
+  if (result === null) return { exists: false, error: `Failed to add remote '${remoteName}' with URL: ${url}` };
+
+  return { exists: true, created: true, url };
+}
+
+module.exports = { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, hasUncommittedChanges, getDefaults, validateArg, ensureRemote };

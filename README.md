@@ -84,13 +84,21 @@ New-Item -ItemType Junction -Path "C:\path\to\your-project\.claude\skills\upstre
 
 ## Usage
 
-### Step 1: Configure upstream remote
+### Step 1: Configure upstream URL
 
-If you haven't set up an upstream remote yet:
+**Option A: Via `.env` (recommended)** — the skill will auto-create the remote for you:
 
+Create a `.env` file in the `scripts/` directory (or project root):
+```env
+UPSTREAM_URL=https://github.com/original-author/original-repo.git
+```
+
+**Option B: Manual** — add the remote yourself:
 ```bash
 git remote add upstream https://github.com/original-author/original-repo.git
 ```
+
+If neither is configured, the skill will tell you what to do.
 
 ### Step 2: Ask Claude Code to sync
 
@@ -203,6 +211,10 @@ Recommendation:      MERGE_WITH_MANUAL_RESOLUTION
 Create a `.env` file in the `scripts/` directory or project root:
 
 ```env
+# URL of the original repo (auto-creates remote if not configured)
+UPSTREAM_URL=https://github.com/original-author/original-repo.git
+
+# Remote name and branch (optional, defaults shown)
 UPSTREAM_REMOTE=upstream
 UPSTREAM_BRANCH=main
 ```

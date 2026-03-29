@@ -6,7 +6,7 @@
  *   node upstream-status.js [--remote <name>] [--branch <branch>] [--since <date>] [--limit <n>] [--format json|text]
  */
 
-const { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, getDefaults, validateArg } = require("./git-utils");
+const { loadEnv, git, getRemotes, getCurrentBranch, fetchRemote, getDefaults, validateArg, ensureRemote } = require("./git-utils");
 
 function parseArgs(argv) {
   const args = { remote: null, branch: null, since: null, limit: 50, format: "text" };
@@ -112,21 +112,25 @@ function printText(r) {
 function run(argv) {
   loadEnv();
   const args = parseArgs(argv || process.argv);
-  const remotes = getRemotes();
-  const hasUpstream = remotes.some((r) => r.name === args.remote);
+  const remote = ensureRemote(args.remote);
 
   const result = {
     remote: args.remote,
     branch: args.branch,
-    remoteExists: hasUpstream,
-    remotes: remotes.map((r) => r.name),
+    remoteExists: remote.exists,
+    remotes: getRemotes().map((r) => r.name),
     currentBranch: getCurrentBranch(),
   };
 
-  if (!hasUpstream) {
-    result.error = `Remote '${args.remote}' not found`;
-    result.suggestion = `Add upstream: git remote add ${args.remote} <upstream-url>`;
-    result.availableRemotes = remotes;
+  if (remote.created) {
+    result.remoteCreated = true;
+    result.remoteUrl = remote.url;
+  }
+
+  if (!remote.exists) {
+    result.error = remote.error;
+    result.suggestion = `Set UPSTREAM_URL in .env or run: git remote add ${args.remote} <url>`;
+    result.availableRemotes = getRemotes();
   } else {
     const fetched = fetchRemote(args.remote);
     if (!fetched) result.fetchWarning = "Failed to fetch upstream. Results may be stale.";
