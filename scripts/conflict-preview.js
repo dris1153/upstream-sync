@@ -78,6 +78,7 @@ function previewMergeConflicts(remote, branch) {
 
   return {
     mergeBase: mergeBase.slice(0, 8),
+    _mergeBaseFull: mergeBase,
     ...analysis,
     summary: {
       totalConflicts: analysis.conflicts.length,
@@ -141,8 +142,7 @@ function previewRebaseConflicts(remote, branch) {
   const mergeResult = previewMergeConflicts(remote, branch);
   if (mergeResult.error) return mergeResult;
 
-  const target = `${remote}/${branch}`;
-  const mergeBase = mergeResult.mergeBase;
+  const mergeBase = mergeResult._mergeBaseFull || mergeResult.mergeBase;
   const localCommits = git(["log", "--oneline", `${mergeBase}..HEAD`], { allowFail: true }) || "";
   const commitCount = localCommits ? localCommits.split("\n").filter(Boolean).length : 0;
 
@@ -214,6 +214,8 @@ function run(argv) {
     console.log("[!] Failed to fetch upstream. Results may be stale.\n");
   }
 
+  const fetchWarning = !fetched ? "Failed to fetch upstream. Results may be stale." : undefined;
+
   let result;
   switch (args.strategy) {
     case "rebase":
@@ -230,6 +232,8 @@ function run(argv) {
       result = previewMergeConflicts(args.remote, args.branch);
       result.strategy = "merge";
   }
+
+  if (fetchWarning) result.fetchWarning = fetchWarning;
 
   if (args.format === "json") {
     console.log(JSON.stringify(result, null, 2));

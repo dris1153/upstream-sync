@@ -28,6 +28,7 @@ function parseArgs(argv) {
   args.branch = defaults.branch;
   validateArg(args.remote, "remote");
   validateArg(args.branch, "branch");
+  if (args.since) validateArg(args.since, "since");
   return args;
 }
 

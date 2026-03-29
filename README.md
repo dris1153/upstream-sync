@@ -163,6 +163,9 @@ node scripts/conflict-preview.js
 # Preview rebase conflicts
 node scripts/conflict-preview.js --strategy rebase
 
+# Preview cherry-pick conflicts for a specific commit
+node scripts/conflict-preview.js --strategy cherry-pick --commit abc123
+
 # JSON output
 node scripts/conflict-preview.js --format json
 
@@ -218,7 +221,7 @@ upstream-sync/
 │   ├── conflict-preview.js    # Preview conflicts before merge
 │   ├── package.json
 │   ├── .env.example
-│   └── __tests__/             # 25 tests
+│   └── __tests__/             # 26 tests
 │       ├── git-utils.test.js
 │       ├── upstream-status.test.js
 │       └── conflict-preview.test.js
