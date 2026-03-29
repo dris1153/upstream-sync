@@ -1,0 +1,8 @@
+{
+  "name": "upstream-sync-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for upstream-sync skill",
+  "scripts": {
+    "test": "node --test __tests__/upstream-status.test.js __tests__/conflict-preview.test.js"
+  }
+}
